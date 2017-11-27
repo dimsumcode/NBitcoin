@@ -1,23 +1,33 @@
 ﻿using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace NBitcoin.RPC
 {
+
 	[JsonObject(MemberSerialization.OptIn)]
 	public class ImportMultiAddress
 	{
-		public class ScriptPubKeyProperty
+		public class ScriptPubKeyObject
 		{
+			public ScriptPubKeyObject()
+			{
+
+			}
+			public ScriptPubKeyObject(Script scriptPubKey)
+			{
+				ScriptPubKey = scriptPubKey;
+			}
+			public ScriptPubKeyObject(BitcoinAddress address)
+			{
+				Address = address;
+			}
 			[JsonIgnore]
-			public string ScriptPubKey { get; set; }
+			public Script ScriptPubKey { get; set; }
 
 			[JsonProperty("address", NullValueHandling = NullValueHandling.Ignore)]
-			public string Address { get; set; }
+			[JsonConverter(typeof(NBitcoin.JsonConverters.BitcoinStringJsonConverter))]
+			public BitcoinAddress Address { get; set; }
 
 			/// <summary>
 			/// Returns true if Address property is populated AND ScriptPubKey is not. If Address and ScriptPubKey are populated, ScriptPubKey takes precedence.
@@ -28,17 +38,20 @@ namespace NBitcoin.RPC
 			{
 				get
 				{
-					return (!string.IsNullOrWhiteSpace(this.Address) && string.IsNullOrWhiteSpace(this.ScriptPubKey));
+					return this.Address != null && this.ScriptPubKey == null;
 				}
 			}
 		}
 
 		[JsonProperty("scriptPubKey", NullValueHandling = NullValueHandling.Ignore)]
 		[JsonConverter(typeof(ImportMultiScriptPubKeyConverter))]
-		public ScriptPubKeyProperty ScriptPubKey { get; set; }
+		public ScriptPubKeyObject ScriptPubKey { get; set; }
 
+		/// <summary>
+		/// Creation time of the key, keep null if this address has just been generated
+		/// </summary>
 		[JsonProperty("timestamp")]
-		public uint Timestamp { get; set; }
+		public DateTimeOffset? Timestamp { get; set; }
 
 		[JsonProperty("redeemscript", NullValueHandling = NullValueHandling.Ignore)]
 		public string RedeemScript { get; set; }
@@ -60,13 +73,13 @@ namespace NBitcoin.RPC
 	}
 
 	/// <summary>
-	/// Customer JsonConvert to deal with loose type of scriptPubKey property in the ImportMulti method
+	/// Custom JsonConverter to deal with loose type of scriptPubKey property in the ImportMulti method
 	/// </summary>
-	public class ImportMultiScriptPubKeyConverter : JsonConverter
+	internal class ImportMultiScriptPubKeyConverter : JsonConverter
 	{
 		public override bool CanConvert(Type objectType)
 		{
-			return objectType == typeof(ImportMultiAddress.ScriptPubKeyProperty);
+			return objectType == typeof(ImportMultiAddress.ScriptPubKeyObject);
 		}
 
 		public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
@@ -76,7 +89,7 @@ namespace NBitcoin.RPC
 
 		public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
 		{
-			ImportMultiAddress.ScriptPubKeyProperty req = (ImportMultiAddress.ScriptPubKeyProperty)value;
+			ImportMultiAddress.ScriptPubKeyObject req = (ImportMultiAddress.ScriptPubKeyObject)value;
 			JToken t = JToken.FromObject(value);
 
 			if (req.IsAddress)
@@ -88,8 +101,7 @@ namespace NBitcoin.RPC
 			else
 			{
 				// Serialize as a simple string value (i.e., "035cd888286d39e64c7c52a49561b323c732fc5cfa48d73faedcf5c40d99747474"
-				JToken pubKey = JToken.FromObject(req.ScriptPubKey);
-				pubKey.WriteTo(writer);
+				writer.WriteValue(req.ScriptPubKey.ToHex());
 			}
 		}
 	}
