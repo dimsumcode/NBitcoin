@@ -6,12 +6,13 @@
 		<Description>The C# Bitcoin Library</Description>
 	</PropertyGroup>
   <PropertyGroup>
-	  <TargetFrameworks>net461;netcoreapp1.1</TargetFrameworks>
+	  <TargetFrameworks>net461;netcoreapp2.0</TargetFrameworks>
+	  <NoWarn>CS0618</NoWarn>
   </PropertyGroup>
 	<PropertyGroup Condition=" '$(TargetFramework)' == 'net461' ">
 		<DefineConstants>$(DefineConstants);WIN</DefineConstants>
 	</PropertyGroup>
-	<PropertyGroup Condition=" '$(TargetFramework)' == 'netcoreapp1.1' ">
+	<PropertyGroup Condition=" '$(TargetFramework)' == 'netcoreapp2.0' ">
 		<DefineConstants>$(DefineConstants);NETCORE;NOTRACESOURCE;NOCUSTOMSSLVALIDATION;NOHTTPSERVER</DefineConstants>
 	</PropertyGroup>
 
@@ -23,7 +24,7 @@
 		<PackageReference Include="System.Net.Requests" Version="4.3.0" />
 		<PackageReference Include="System.Net.Http" Version="4.3.2" />
 		<PackageReference Include="xunit" Version="2.2.0" />
-		<PackageReference Include="xunit.runner.visualstudio" Version="2.3.0-beta3-build3705" />
+		<PackageReference Include="xunit.runner.visualstudio" Version="2.3.1" />
 		<PackageReference Include="System.Runtime.InteropServices.RuntimeInformation" Version="4.3.0" />
 		<PackageReference Include="System.Diagnostics.Process" Version="4.3.0" />
 	</ItemGroup>
@@ -159,6 +160,24 @@
     <Service Include="{82a7f48d-3b50-4b1e-b82e-3ada8210c358}" />
   </ItemGroup>
   <ItemGroup>
+    <None Update="data\bip39_vectors.en.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="data\bip39_vectors.es.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="data\bip39_vectors.fr.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="data\bip39_vectors.ja.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="data\bip39_vectors.zh-CN.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="data\bip39_vectors.zh-TW.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="xunit.runner.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

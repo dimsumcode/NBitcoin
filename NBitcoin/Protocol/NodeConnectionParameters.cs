@@ -22,8 +22,12 @@ namespace NBitcoin.Protocol
 			IsRelay = true;
 			Services = NodeServices.Nothing;
 			ConnectCancellation = default(CancellationToken);
-			ReceiveBufferSize = 1000 * 5000;
-			SendBufferSize = 1000 * 1000;
+
+			// Use max supported by MAC OSX Yosemite/Mavericks/Sierra (https://fasterdata.es.net/host-tuning/osx/)
+			ReceiveBufferSize = 1048576; 
+			SendBufferSize = 1048576;
+			////////////////////////
+
 			UserAgent = VersionPayload.GetNBitcoinUserAgent();
 			PreferredTransactionOptions = TransactionOptions.All;
 		}
@@ -42,7 +46,6 @@ namespace NBitcoin.Protocol
 			Advertize = other.Advertize;
 			ReuseBuffer = other.ReuseBuffer;
 			PreferredTransactionOptions = other.PreferredTransactionOptions;
-
 			foreach(var behavior in other.TemplateBehaviors)
 			{
 				TemplateBehaviors.Add(behavior.Clone());
@@ -57,6 +60,7 @@ namespace NBitcoin.Protocol
 			get;
 			set;
 		}
+
 		public ProtocolVersion Version
 		{
 			get;

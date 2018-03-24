@@ -39,7 +39,7 @@ namespace NBitcoin.RPC
 		network			clearbanned
 
 		------------------ Block chain and UTXO
-		blockchain		 getblockchaininfo
+		blockchain		 getblockchaininfo			Yes
 		blockchain		 getbestblockhash			 Yes
 		blockchain		 getblockcount				Yes
 		blockchain		 getblock					 Yes
@@ -48,7 +48,7 @@ namespace NBitcoin.RPC
 		blockchain		 getdifficulty
 		blockchain		 getmempoolinfo
 		blockchain		 getrawmempool				Yes
-		blockchain		 gettxout
+		blockchain		 gettxout					Yes
 		blockchain		 gettxoutproof
 		blockchain		 verifytxoutproof
 		blockchain		 gettxoutsetinfo
@@ -76,17 +76,16 @@ namespace NBitcoin.RPC
 		rawtransactions	fundrawtransaction
 
 		------------------ Utility functions
-		util			   createmultisig
-		util			   validateaddress
-		util			   verifymessage
-		util			   estimatefee				  Yes
-		util			   estimatepriority			 Yes
-
+		util			createmultisig
+		util			validateaddress
+		util			verifymessage
+		util			estimatefee				  Yes
+		util			estimatesmartfee			  Yes
 		------------------ Not shown in help
-		hidden			 invalidateblock
-		hidden			 reconsiderblock
-		hidden			 setmocktime
-		hidden			 resendwallettransactions
+		hidden			invalidateblock				Yes
+		hidden			reconsiderblock
+		hidden			setmocktime
+		hidden			resendwallettransactions
 
 		------------------ Wallet
 		wallet			 addmultisigaddress
@@ -240,7 +239,6 @@ namespace NBitcoin.RPC
 			if(!string.IsNullOrEmpty(home))
 			{
 				var bitcoinFolder = Path.Combine(home, ".bitcoin");
-				RegisterDefaultCookiePath(Network.Main, bitcoinFolder);
 
 				var mainnet = Path.Combine(bitcoinFolder, ".cookie");
 				RegisterDefaultCookiePath(Network.Main, mainnet);
@@ -426,15 +424,7 @@ namespace NBitcoin.RPC
 
 		public RPCResponse SendCommand(RPCRequest request, bool throwIfRPCError = true)
 		{
-			try
-			{
-				return SendCommandAsync(request, throwIfRPCError).Result;
-			}
-			catch(AggregateException aex)
-			{
-				ExceptionDispatchInfo.Capture(aex.InnerException).Throw();
-				return null; //Can't happen
-			}
+			return SendCommandAsync(request, throwIfRPCError).GetAwaiter().GetResult();
 		}
 
 		/// <summary>
@@ -746,20 +736,14 @@ namespace NBitcoin.RPC
 		public PeerInfo[] GetPeersInfo()
 		{
 			PeerInfo[] peers = null;
-			try
-			{
-				peers = GetPeersInfoAsync().Result;
-			}
-			catch(AggregateException aex)
-			{
-				ExceptionDispatchInfo.Capture(aex.InnerException).Throw();
-			}
+			
+			peers = GetPeersInfoAsync().GetAwaiter().GetResult();
 			return peers;
 		}
 
 		public async Task<PeerInfo[]> GetPeersInfoAsync()
 		{
-			var resp = await SendCommandAsync("getpeerinfo").ConfigureAwait(false);
+			var resp = await SendCommandAsync(RPCOperations.getpeerinfo).ConfigureAwait(false);
 			var peers = resp.Result as JArray;
 			var result = new PeerInfo[peers.Count];
 			var i = 0;
@@ -770,12 +754,18 @@ namespace NBitcoin.RPC
 
 				localAddr = string.IsNullOrEmpty(localAddr) ? "127.0.0.1:8333" : localAddr;
 
+				ulong services;
+				if(!ulong.TryParse((string)peer["services"], out services))
+				{
+					services = Utils.ToUInt64(Encoders.Hex.DecodeData((string)peer["services"]), false);
+				}
+
 				result[i++] = new PeerInfo
 				{
 					Id = (int)peer["id"],
 					Address = Utils.ParseIpEndpoint((string)peer["addr"], this.Network.DefaultPort),
 					LocalAddress = Utils.ParseIpEndpoint(localAddr, this.Network.DefaultPort),
-					Services = ulong.Parse((string)peer["services"]),
+					Services = (NodeServices)services,
 					LastSend = Utils.UnixTimeToDateTime((uint)peer["lastsend"]),
 					LastReceive = Utils.UnixTimeToDateTime((uint)peer["lastrecv"]),
 					BytesSent = (long)peer["bytessent"],
@@ -810,26 +800,26 @@ namespace NBitcoin.RPC
 		{
 			if(nodeEndPoint == null)
 				throw new ArgumentNullException("nodeEndPoint");
-			await SendCommandAsync("addnode", nodeEndPoint.ToString(), onetry ? "onetry" : "add").ConfigureAwait(false);
+			await SendCommandAsync(RPCOperations.addnode, nodeEndPoint.ToString(), onetry ? "onetry" : "add").ConfigureAwait(false);
 		}
 
 		public void RemoveNode(EndPoint nodeEndPoint)
 		{
 			if(nodeEndPoint == null)
 				throw new ArgumentNullException("nodeEndPoint");
-			SendCommandAsync("addnode", nodeEndPoint.ToString(), "remove");
+			SendCommandAsync(RPCOperations.addnode, nodeEndPoint.ToString(), "remove");
 		}
 
 		public async Task RemoveNodeAsync(EndPoint nodeEndPoint)
 		{
 			if(nodeEndPoint == null)
 				throw new ArgumentNullException("nodeEndPoint");
-			await SendCommandAsync("addnode", nodeEndPoint.ToString(), "remove").ConfigureAwait(false);
+			await SendCommandAsync(RPCOperations.addnode, nodeEndPoint.ToString(), "remove").ConfigureAwait(false);
 		}
 
 		public async Task<AddedNodeInfo[]> GetAddedNodeInfoAsync(bool detailed)
 		{
-			var result = await SendCommandAsync("getaddednodeinfo", detailed).ConfigureAwait(false);
+			var result = await SendCommandAsync(RPCOperations.getaddednodeinfo, detailed).ConfigureAwait(false);
 			var obj = result.Result;
 			return obj.Select(entry => new AddedNodeInfo
 			{
@@ -846,28 +836,16 @@ namespace NBitcoin.RPC
 		public AddedNodeInfo[] GetAddedNodeInfo(bool detailed)
 		{
 			AddedNodeInfo[] addedNodesInfo = null;
-			try
-			{
-				addedNodesInfo = GetAddedNodeInfoAsync(detailed).Result;
-			}
-			catch(AggregateException aex)
-			{
-				ExceptionDispatchInfo.Capture(aex.InnerException).Throw();
-			}
+			
+			addedNodesInfo = GetAddedNodeInfoAsync(detailed).GetAwaiter().GetResult();
 			return addedNodesInfo;
 		}
 
 		public AddedNodeInfo GetAddedNodeInfo(bool detailed, EndPoint nodeEndPoint)
 		{
 			AddedNodeInfo addedNodeInfo = null;
-			try
-			{
-				addedNodeInfo = GetAddedNodeInfoAync(detailed, nodeEndPoint).Result;
-			}
-			catch(AggregateException aex)
-			{
-				ExceptionDispatchInfo.Capture(aex.InnerException).Throw();
-			}
+			
+			addedNodeInfo = GetAddedNodeInfoAync(detailed, nodeEndPoint).GetAwaiter().GetResult();
 			return addedNodeInfo;
 		}
 
@@ -879,7 +857,7 @@ namespace NBitcoin.RPC
 			try
 			{
 
-				var result = await SendCommandAsync("getaddednodeinfo", detailed, nodeEndPoint.ToString()).ConfigureAwait(false);
+				var result = await SendCommandAsync(RPCOperations.getaddednodeinfo, detailed, nodeEndPoint.ToString()).ConfigureAwait(false);
 				var e = result.Result;
 				return e.Select(entry => new AddedNodeInfo
 				{
@@ -905,14 +883,61 @@ namespace NBitcoin.RPC
 
 #region Block chain and UTXO
 
+		public async Task<BlockchainInfo> GetBlockchainInfoAsync()
+		{
+			var response = await SendCommandAsync(RPCOperations.getblockchaininfo).ConfigureAwait(false);
+			var result = response.Result;
+
+			var epochToDtateTimeOffset = new Func<ulong, DateTimeOffset>(epoch=>{
+				try{
+					return Utils.UnixTimeToDateTime(epoch);
+				}catch(OverflowException){
+					return DateTimeOffset.MaxValue;
+				}
+			});
+
+			var blockchainInfo = new BlockchainInfo
+			{
+				Chain = Network.GetNetwork(result.Value<string>("chain")),
+				Blocks = result.Value<ulong>("blocks"),
+				Headers = result.Value<ulong>("headers"),
+				BestBlockHash = new uint256(result.Value<string>("bestblockhash")), // the block hash
+				Difficulty = result.Value<ulong>("difficulty"),
+				MedianTime = result.Value<ulong>("mediantime"),
+				VerificationProgress = result.Value<float>("verificationprogress"),
+				InitialBlockDownload = result.Value<bool>("initialblockdownload"),
+				ChainWork = new uint256(result.Value<string>("chainwork")), 
+				SizeOnDisk = result.Value<ulong>("size_on_disk"),
+				Pruned = result.Value<bool>("pruned"),
+				SoftForks = result["softforks"].Select(x=> 
+					new BlockchainInfo.SoftFork {
+						Bip = (string)(x["id"]),
+						Version = (int)(x["version"]),
+						RejectStatus = bool.Parse((string)(x["reject"]["status"]))
+					}).ToList(),
+				Bip9SoftForks = result["bip9_softforks"].Select(x=> {
+					var o = x.First();
+					return new BlockchainInfo.Bip9SoftFork {
+						Name = ((JProperty)x).Name,
+						Status = (string)o["status"],
+						StartTime = epochToDtateTimeOffset((ulong)o["startTime"]),
+						Timeout =   epochToDtateTimeOffset((ulong)o["timeout"]),
+						SinceHeight =  (ulong)o["since"],
+					};
+					}).ToList()
+			};
+
+			return blockchainInfo;
+		}
+
 		public uint256 GetBestBlockHash()
 		{
-			return uint256.Parse((string)SendCommand("getbestblockhash").Result);
+			return uint256.Parse((string)SendCommand(RPCOperations.getbestblockhash).Result);
 		}
 
 		public async Task<uint256> GetBestBlockHashAsync()
 		{
-			return uint256.Parse((string)(await SendCommandAsync("getbestblockhash").ConfigureAwait(false)).Result);
+			return uint256.Parse((string)(await SendCommandAsync(RPCOperations.getbestblockhash).ConfigureAwait(false)).Result);
 		}
 
 		public BlockHeader GetBlockHeader(int height)
@@ -934,7 +959,7 @@ namespace NBitcoin.RPC
 		/// <returns></returns>
 		public async Task<Block> GetBlockAsync(uint256 blockId)
 		{
-			var resp = await SendCommandAsync("getblock", blockId.ToString(), false).ConfigureAwait(false);
+			var resp = await SendCommandAsync(RPCOperations.getblock, blockId.ToString(), false).ConfigureAwait(false);
 			return new Block(Encoders.Hex.DecodeData(resp.Result.ToString()));
 		}
 
@@ -945,28 +970,12 @@ namespace NBitcoin.RPC
 		/// <returns></returns>
 		public Block GetBlock(uint256 blockId)
 		{
-			try
-			{
-				return GetBlockAsync(blockId).Result;
-			}
-			catch(AggregateException aex)
-			{
-				ExceptionDispatchInfo.Capture(aex.InnerException).Throw();
-				throw;
-			}
+			return GetBlockAsync(blockId).GetAwaiter().GetResult();
 		}
 
 		public Block GetBlock(int height)
 		{
-			try
-			{
-				return GetBlockAsync(height).Result;
-			}
-			catch(AggregateException aex)
-			{
-				ExceptionDispatchInfo.Capture(aex.InnerException).Throw();
-				throw;
-			}
+			return GetBlockAsync(height).GetAwaiter().GetResult();
 		}
 
 		public async Task<Block> GetBlockAsync(int height)
@@ -1010,38 +1019,79 @@ namespace NBitcoin.RPC
 
 		public uint256 GetBlockHash(int height)
 		{
-			var resp = SendCommand("getblockhash", height);
+			var resp = SendCommand(RPCOperations.getblockhash, height);
 			return uint256.Parse(resp.Result.ToString());
 		}
 
 		public async Task<uint256> GetBlockHashAsync(int height)
 		{
-			var resp = await SendCommandAsync("getblockhash", height).ConfigureAwait(false);
+			var resp = await SendCommandAsync(RPCOperations.getblockhash, height).ConfigureAwait(false);
 			return uint256.Parse(resp.Result.ToString());
 		}
 
 		public int GetBlockCount()
 		{
-			return (int)SendCommand("getblockcount").Result;
+			return (int)SendCommand(RPCOperations.getblockcount).Result;
 		}
 
 		public async Task<int> GetBlockCountAsync()
 		{
-			return (int)(await SendCommandAsync("getblockcount").ConfigureAwait(false)).Result;
+			return (int)(await SendCommandAsync(RPCOperations.getblockcount).ConfigureAwait(false)).Result;
 		}
 
 		public uint256[] GetRawMempool()
 		{
-			var result = SendCommand("getrawmempool");
+			var result = SendCommand(RPCOperations.getrawmempool);
 			var array = (JArray)result.Result;
 			return array.Select(o => (string)o).Select(uint256.Parse).ToArray();
 		}
 
 		public async Task<uint256[]> GetRawMempoolAsync()
 		{
-			var result = await SendCommandAsync("getrawmempool").ConfigureAwait(false);
+			var result = await SendCommandAsync(RPCOperations.getrawmempool).ConfigureAwait(false);
 			var array = (JArray)result.Result;
 			return array.Select(o => (string)o).Select(uint256.Parse).ToArray();
+		}
+
+		/// <summary>
+		/// Returns details about an unspent transaction output.
+		/// </summary>
+		/// <param name="txid">The transaction id</param>
+		/// <param name="index">vout number</param>
+		/// <param name="includeMempool">Whether to include the mempool. Note that an unspent output that is spent in the mempool won't appear.</param>
+		/// <returns>null if spent or never existed</returns>
+		public GetTxOutResponse GetTxOut(uint256 txid, int index, bool includeMempool = true)
+		{
+			return GetTxOutAsync(txid, index, includeMempool).GetAwaiter().GetResult();
+		}
+
+		/// <summary>
+		/// Returns details about an unspent transaction output.
+		/// </summary>
+		/// <param name="txid">The transaction id</param>
+		/// <param name="index">vout number</param>
+		/// <param name="includeMempool">Whether to include the mempool. Note that an unspent output that is spent in the mempool won't appear.</param>
+		/// <returns>null if spent or never existed</returns>
+		public async Task<GetTxOutResponse> GetTxOutAsync(uint256 txid, int index, bool includeMempool = true)
+		{
+			var response = await SendCommandAsync(RPCOperations.gettxout, txid.ToString(), index, includeMempool).ConfigureAwait(false);
+			if (string.IsNullOrWhiteSpace(response?.ResultString))
+			{
+				return null;
+			}
+
+			var result = response.Result;
+			var value = result.Value<decimal>("value"); // The transaction value in BTC
+			var txOut = new TxOut(Money.Coins(value), new Script(result["scriptPubKey"].Value<string>("asm")));
+
+			return new GetTxOutResponse
+			{
+				BestBlock = new uint256(result.Value<string>("bestblock")), // the block hash
+				Confirmations = result.Value<int>("confirmations"), // The number of confirmations
+				IsCoinBase = result.Value<bool>("coinbase"), // Coinbase or not
+				ScriptPubKeyType = result["scriptPubKey"].Value<string>("type"),  // The type, eg pubkeyhash
+				TxOut = txOut
+			};
 		}
 
 		/// <summary>
@@ -1054,7 +1104,7 @@ namespace NBitcoin.RPC
 			if(blockHash == null)
 				throw new ArgumentNullException("blockHash");
 
-			var resp = SendCommand("getblock", blockHash.ToString());
+			var resp = SendCommand(RPCOperations.getblock, blockHash.ToString());
 
 			var tx = resp.Result["tx"] as JArray;
 			if(tx != null)
@@ -1083,7 +1133,7 @@ namespace NBitcoin.RPC
 
 		public Transaction DecodeRawTransaction(string rawHex)
 		{
-			var response = SendCommand("decoderawtransaction", rawHex);
+			var response = SendCommand(RPCOperations.decoderawtransaction, rawHex);
 			return Transaction.Parse(response.Result.ToString(), RawFormat.Satoshi);
 		}
 
@@ -1094,7 +1144,7 @@ namespace NBitcoin.RPC
 		}
 		public async Task<Transaction> DecodeRawTransactionAsync(string rawHex)
 		{
-			var response = await SendCommandAsync("decoderawtransaction", rawHex).ConfigureAwait(false);
+			var response = await SendCommandAsync(RPCOperations.decoderawtransaction, rawHex).ConfigureAwait(false);
 			return Transaction.Parse(response.Result.ToString(), RawFormat.Satoshi);
 		}
 
@@ -1110,20 +1160,12 @@ namespace NBitcoin.RPC
 		/// <returns></returns>
 		public Transaction GetRawTransaction(uint256 txid, bool throwIfNotFound = true)
 		{
-			try
-			{
-				return GetRawTransactionAsync(txid, throwIfNotFound).Result;
-			}
-			catch(AggregateException aex)
-			{
-				ExceptionDispatchInfo.Capture(aex.InnerException).Throw();
-				return null; //Can't happen
-			}
+			return GetRawTransactionAsync(txid, throwIfNotFound).GetAwaiter().GetResult();
 		}
 
 		public async Task<Transaction> GetRawTransactionAsync(uint256 txid, bool throwIfNotFound = true)
 		{
-			var response = await SendCommandAsync(new RPCRequest("getrawtransaction", new[] { txid.ToString() }), throwIfNotFound).ConfigureAwait(false);
+			var response = await SendCommandAsync(new RPCRequest(RPCOperations.getrawtransaction, new[] { txid.ToString() }), throwIfNotFound).ConfigureAwait(false);
 			if(throwIfNotFound)
 				response.ThrowIfError();
 			if(response.Error != null && response.Error.Code == RPCErrorCode.RPC_INVALID_ADDRESS_OR_KEY)
@@ -1142,7 +1184,7 @@ namespace NBitcoin.RPC
 
 		public void SendRawTransaction(byte[] bytes)
 		{
-			SendCommand("sendrawtransaction", Encoders.Hex.EncodeData(bytes));
+			SendCommand(RPCOperations.sendrawtransaction, Encoders.Hex.EncodeData(bytes));
 		}
 
 		public Task SendRawTransactionAsync(Transaction tx)
@@ -1152,24 +1194,133 @@ namespace NBitcoin.RPC
 
 		public Task SendRawTransactionAsync(byte[] bytes)
 		{
-			return SendCommandAsync("sendrawtransaction", Encoders.Hex.EncodeData(bytes));
+			return SendCommandAsync(RPCOperations.sendrawtransaction, Encoders.Hex.EncodeData(bytes));
 		}
 
-#endregion
+		public BumpResponse BumpFee(uint256 txid)
+		{
+			return BumpFeeAsync(txid).GetAwaiter().GetResult();
+		}
 
-#region Utility functions
+		public async Task<BumpResponse> BumpFeeAsync(uint256 txid)
+		{
+			var response = await SendCommandAsync(RPCOperations.bumpfee, txid.ToString());
+			var o = response.Result;
+			return new BumpResponse{
+				TransactionId = uint256.Parse((string)o["txid"]),
+				OriginalFee = (ulong)o["origfee"],
+				Fee = (ulong)o["fee"],
+				Errors = o["errors"].Select(x=>(string)x).ToList()
+			};
+		}
+
+		#endregion
+
+		#region Utility functions
+
+		// Estimates the approximate fee per kilobyte needed for a transaction to begin
+		// confirmation within conf_target blocks if possible and return the number of blocks
+		// for which the estimate is valid.Uses virtual transaction size as defined
+		// in BIP 141 (witness data is discounted).
+		#region Fee Estimation
+
+		/// <summary>
+		/// (>= Bitcoin Core v0.14) Get the estimated fee per kb for being confirmed in nblock
+		/// </summary>
+		/// <param name="confirmationTarget">Confirmation target in blocks (1 - 1008)</param>
+		/// <param name="estimateMode">Whether to return a more conservative estimate which also satisfies a longer history. A conservative estimate potentially returns a higher feerate and is more likely to be sufficient for the desired target, but is not as responsive to short term drops in the prevailing fee market.</param>
+		/// <returns>The estimated fee rate, block number where estimate was found</returns>
+		/// <exception cref="NoEstimationException">The Fee rate couldn't be estimated because of insufficient data from Bitcoin Core</exception>
+		public EstimateSmartFeeResponse EstimateSmartFee(int confirmationTarget, EstimateSmartFeeMode estimateMode = EstimateSmartFeeMode.Conservative)
+		{
+			return EstimateSmartFeeAsync(confirmationTarget, estimateMode).GetAwaiter().GetResult();
+		}
+
+		/// <summary>
+		/// (>= Bitcoin Core v0.14) Tries to get the estimated fee per kb for being confirmed in nblock
+		/// </summary>
+		/// <param name="confirmationTarget">Confirmation target in blocks (1 - 1008)</param>
+		/// <param name="estimateMode">Whether to return a more conservative estimate which also satisfies a longer history. A conservative estimate potentially returns a higher feerate and is more likely to be sufficient for the desired target, but is not as responsive to short term drops in the prevailing fee market.</param>
+		/// <returns>The estimated fee rate, block number where estimate was found or null</returns>
+		public async Task<EstimateSmartFeeResponse> TryEstimateSmartFeeAsync(int confirmationTarget, EstimateSmartFeeMode estimateMode = EstimateSmartFeeMode.Conservative)
+		{
+			return await EstimateSmartFeeImplAsync(confirmationTarget, estimateMode).ConfigureAwait(false);
+		}
+
+		/// <summary>
+		/// (>= Bitcoin Core v0.14) Tries to get the estimated fee per kb for being confirmed in nblock
+		/// </summary>
+		/// <param name="confirmationTarget">Confirmation target in blocks (1 - 1008)</param>
+		/// <param name="estimateMode">Whether to return a more conservative estimate which also satisfies a longer history. A conservative estimate potentially returns a higher feerate and is more likely to be sufficient for the desired target, but is not as responsive to short term drops in the prevailing fee market.</param>
+		/// <returns>The estimated fee rate, block number where estimate was found or null</returns>
+		public EstimateSmartFeeResponse TryEstimateSmartFee(int confirmationTarget, EstimateSmartFeeMode estimateMode = EstimateSmartFeeMode.Conservative)
+		{
+			return TryEstimateSmartFeeAsync(confirmationTarget, estimateMode).GetAwaiter().GetResult();
+		}
+
+		/// <summary>
+		/// (>= Bitcoin Core v0.14) Get the estimated fee per kb for being confirmed in nblock
+		/// </summary>
+		/// <param name="confirmationTarget">Confirmation target in blocks (1 - 1008)</param>
+		/// <param name="estimateMode">Whether to return a more conservative estimate which also satisfies a longer history. A conservative estimate potentially returns a higher feerate and is more likely to be sufficient for the desired target, but is not as responsive to short term drops in the prevailing fee market.</param>
+		/// <returns>The estimated fee rate, block number where estimate was found</returns>
+		/// <exception cref="NoEstimationException">when fee couldn't be estimated</exception>
+		public async Task<EstimateSmartFeeResponse> EstimateSmartFeeAsync(int confirmationTarget, EstimateSmartFeeMode estimateMode = EstimateSmartFeeMode.Conservative)
+		{
+			var feeRate = await EstimateSmartFeeImplAsync(confirmationTarget, estimateMode);
+			if (feeRate == null)
+				throw new NoEstimationException(confirmationTarget);
+			return feeRate;
+		}
+
+		/// <summary>
+		/// (>= Bitcoin Core v0.14)
+		/// </summary>
+		private async Task<EstimateSmartFeeResponse> EstimateSmartFeeImplAsync(int confirmationTarget, EstimateSmartFeeMode estimateMode = EstimateSmartFeeMode.Conservative)
+		{
+			var request = new RPCRequest(RPCOperations.estimatesmartfee.ToString(), new object[] { confirmationTarget, estimateMode.ToString().ToUpperInvariant() });
+
+			var response = await SendCommandAsync(request, throwIfRPCError: false).ConfigureAwait(false);
+
+			if (response?.Error != null)
+			{
+				return null;
+			}
+			var resultJToken = response.Result;
+			var feeRateDecimal = resultJToken.Value<decimal>("feerate"); // estimate fee-per-kilobyte (in BTC)
+			var blocks = resultJToken.Value<int>("blocks"); // block number where estimate was found
+			var money = Money.Coins(feeRateDecimal);
+			if (money.Satoshi <= 0)
+			{
+				return null;
+			}
+			return new EstimateSmartFeeResponse
+			{
+				FeeRate = new FeeRate(money),
+				Blocks = blocks
+			};
+		}
+
+		#endregion
+
+		// DEPRECATED. Please use estimatesmartfee for more intelligent estimates.
+		// Estimates the approximate fee per kilobyte needed for a transaction to begin
+		// confirmation within nblocks blocks.Uses virtual transaction size of transaction
+		// as defined in BIP 141 (witness data is discounted).
+		#region Obsoleted Fee Estimation
+
 		/// <summary>
 		/// Get the estimated fee per kb for being confirmed in nblock
 		/// </summary>
 		/// <param name="nblock"></param>
 		/// <returns></returns>
-		[Obsolete("Use EstimateFeeRate or TryEstimateFeeRate instead")]
+		[Obsolete("Use EstimateSmartFee or TryEstimateSmartFee instead")]
 		public FeeRate EstimateFee(int nblock)
 		{
 			var response = SendCommand(RPCOperations.estimatefee, nblock);
 			var result = response.Result.Value<decimal>();
 			var money = Money.Coins(result);
-			if(money.Satoshi < 0)
+			if (money.Satoshi < 0)
 				money = Money.Zero;
 			return new FeeRate(money);
 		}
@@ -1179,7 +1330,7 @@ namespace NBitcoin.RPC
 		/// </summary>
 		/// <param name="nblock"></param>
 		/// <returns></returns>
-		[Obsolete("Use EstimateFeeRateAsync instead")]
+		[Obsolete("Use EstimateSmartFeeAsync instead")]
 		public async Task<Money> EstimateFeeAsync(int nblock)
 		{
 			var response = await SendCommandAsync(RPCOperations.estimatefee, nblock).ConfigureAwait(false);
@@ -1192,6 +1343,7 @@ namespace NBitcoin.RPC
 		/// <param name="nblock">The time expected, in block, before getting confirmed</param>
 		/// <returns>The estimated fee rate</returns>
 		/// <exception cref="NoEstimationException">The Fee rate couldn't be estimated because of insufficient data from Bitcoin Core</exception>
+		[Obsolete("Use EstimateSmartFee instead")]
 		public FeeRate EstimateFeeRate(int nblock)
 		{
 			return EstimateFeeRateAsync(nblock).GetAwaiter().GetResult();
@@ -1202,6 +1354,7 @@ namespace NBitcoin.RPC
 		/// </summary>
 		/// <param name="nblock">The time expected, in block, before getting confirmed</param>
 		/// <returns>The estimated fee rate or null</returns>
+		[Obsolete("Use TryEstimateSmartFeeAsync instead")]
 		public async Task<FeeRate> TryEstimateFeeRateAsync(int nblock)
 		{
 			return await EstimateFeeRateImplAsync(nblock).ConfigureAwait(false);
@@ -1212,6 +1365,7 @@ namespace NBitcoin.RPC
 		/// </summary>
 		/// <param name="nblock">The time expected, in block, before getting confirmed</param>
 		/// <returns>The estimated fee rate or null</returns>
+		[Obsolete("Use TryEstimateSmartFee instead")]
 		public FeeRate TryEstimateFeeRate(int nblock)
 		{
 			return TryEstimateFeeRateAsync(nblock).GetAwaiter().GetResult();
@@ -1223,38 +1377,36 @@ namespace NBitcoin.RPC
 		/// <param name="nblock">The time expected, in block, before getting confirmed</param>
 		/// <returns>The estimated fee rate</returns>
 		/// <exception cref="NoEstimationException">when fee couldn't be estimated</exception>
+		[Obsolete("Use EstimateSmartFeeAsync instead")]
 		public async Task<FeeRate> EstimateFeeRateAsync(int nblock)
 		{
 			var feeRate = await EstimateFeeRateImplAsync(nblock);
-			if(feeRate == null)
+			if (feeRate == null)
 				throw new NoEstimationException(nblock);
 			return feeRate;
 		}
 
+		[Obsolete("Use EstimateSmartFeeImplAsync instead")]
 		private async Task<FeeRate> EstimateFeeRateImplAsync(int nblock)
 		{
 			var response = await SendCommandAsync(RPCOperations.estimatefee, nblock).ConfigureAwait(false);
 			var result = response.Result.Value<decimal>();
 			var money = Money.Coins(result);
-			if(money.Satoshi < 0)
+			if (money.Satoshi < 0)
 				return null;
 			return new FeeRate(money);
 		}
 
-		public decimal EstimatePriority(int nblock)
+		#endregion
+
+		[Obsolete("Removed by Bitcoin Core v0.15.0 Release")]		public decimal EstimatePriority(int nblock)
 		{
 			decimal priority = 0;
-			try
-			{
-				priority = EstimatePriorityAsync(nblock).Result;
-			}
-			catch(AggregateException aex)
-			{
-				ExceptionDispatchInfo.Capture(aex.InnerException).Throw();
-			}
+			priority = EstimatePriorityAsync(nblock).GetAwaiter().GetResult();
 			return priority;
 		}
 
+		[Obsolete("Removed by Bitcoin Core v0.15.0 Release")]
 		public async Task<decimal> EstimatePriorityAsync(int nblock)
 		{
 			if(nblock < 0)
@@ -1270,18 +1422,21 @@ namespace NBitcoin.RPC
 		/// <param name="amount">The amount to spend</param>
 		/// <param name="commentTx">A locally-stored (not broadcast) comment assigned to this transaction. Default is no comment</param>
 		/// <param name="commentDest">A locally-stored (not broadcast) comment assigned to this transaction. Meant to be used for describing who the payment was sent to. Default is no comment</param>
+		/// <param name="subtractFeeFromAmount">The fee will be deducted from the amount being sent. The recipient will receive less bitcoins than you enter in the amount field. </param>
+		/// <param name="replaceable">Allow this transaction to be replaced by a transaction with higher fees. </param>
 		/// <returns>The TXID of the sent transaction</returns>
-		public uint256 SendToAddress(BitcoinAddress address, Money amount, string commentTx = null, string commentDest = null)
+		public uint256 SendToAddress(
+			BitcoinAddress address, 
+			Money amount, 
+			string commentTx = null, 
+			string commentDest = null,
+			bool subtractFeeFromAmount = false,
+			bool replaceable = false
+		)
 		{
 			uint256 txid = null;
-			try
-			{
-				txid = SendToAddressAsync(address, amount, commentTx, commentDest).Result;
-			}
-			catch(AggregateException aex)
-			{
-				ExceptionDispatchInfo.Capture(aex.InnerException).Throw();
-			}
+
+			txid = SendToAddressAsync(address, amount, commentTx, commentDest, subtractFeeFromAmount, replaceable).GetAwaiter().GetResult();
 			return txid;
 		}
 
@@ -1292,16 +1447,25 @@ namespace NBitcoin.RPC
 		/// <param name="amount">The amount to spend</param>
 		/// <param name="commentTx">A locally-stored (not broadcast) comment assigned to this transaction. Default is no comment</param>
 		/// <param name="commentDest">A locally-stored (not broadcast) comment assigned to this transaction. Meant to be used for describing who the payment was sent to. Default is no comment</param>
+		/// <param name="subtractFeeFromAmount">The fee will be deducted from the amount being sent. The recipient will receive less bitcoins than you enter in the amount field. </param>
+		/// <param name="replaceable">Allow this transaction to be replaced by a transaction with higher fees. </param>
 		/// <returns>The TXID of the sent transaction</returns>
-		public async Task<uint256> SendToAddressAsync(BitcoinAddress address, Money amount, string commentTx = null, string commentDest = null)
+		public async Task<uint256> SendToAddressAsync(
+			BitcoinAddress address, 
+			Money amount, 
+			string commentTx = null, 
+			string commentDest = null, 
+			bool subtractFeeFromAmount = false,
+			bool replaceable = false
+			)
 		{
 			List<object> parameters = new List<object>();
 			parameters.Add(address.ToString());
 			parameters.Add(amount.ToString());
-			if(commentTx != null)
-				parameters.Add(commentTx);
-			if(commentDest != null)
-				parameters.Add(commentDest);
+			parameters.Add($"{commentTx}");
+			parameters.Add($"{commentDest}");
+			parameters.Add(subtractFeeFromAmount);
+			parameters.Add(replaceable);
 			var resp = await SendCommandAsync(RPCOperations.sendtoaddress, parameters.ToArray()).ConfigureAwait(false);
 			return uint256.Parse(resp.Result.ToString());
 		}
@@ -1325,6 +1489,28 @@ namespace NBitcoin.RPC
 		{
 			return GenerateAsync(nBlocks).GetAwaiter().GetResult();
 		}
+
+#region Region Hidden Methods
+
+		/// <summary>
+		/// Permanently marks a block as invalid, as if it violated a consensus rule.
+		/// </summary>
+		/// <param name="blockhash">the hash of the block to mark as invalid</param>
+		public void InvalidateBlock(uint256 blockhash)
+		{
+			SendCommand(RPCOperations.invalidateblock, blockhash.ToString());
+		}
+
+		/// <summary>
+		/// Permanently marks a block as invalid, as if it violated a consensus rule.
+		/// </summary>
+		/// <param name="blockhash">the hash of the block to mark as invalid</param>
+		public async Task InvalidateBlockAsync(uint256 blockhash)
+		{
+			await SendCommandAsync(RPCOperations.invalidateblock, blockhash.ToString()).ConfigureAwait(false);
+		}
+
+#endregion
 	}
 
 #if !NOSOCKET
@@ -1342,7 +1528,7 @@ namespace NBitcoin.RPC
 		{
 			get; internal set;
 		}
-		public ulong Services
+		public NodeServices Services
 		{
 			get; internal set;
 		}
@@ -1447,7 +1633,52 @@ namespace NBitcoin.RPC
 			get; internal set;
 		}
 	}
+	
 #endif
+
+	public class BlockchainInfo
+	{
+		public class SoftFork
+		{
+			public string Bip { get; set; }
+			public int Version { get; set; }
+			public bool RejectStatus { get; set; }
+		}
+
+		public class Bip9SoftFork
+		{
+			public string Name { get; set; }
+			public string Status { get; set; }
+			public DateTimeOffset StartTime { get; set; }
+			public DateTimeOffset Timeout { get; set; }
+			public ulong SinceHeight { get; set; }
+			
+		}
+		
+		public Network Chain { get; set; }
+		public ulong Blocks { get; set; }
+		public ulong Headers { get; set; }
+		public uint256 BestBlockHash { get; set; }
+		public ulong Difficulty { get; set; }
+		public ulong MedianTime { get; set; }
+
+		public float VerificationProgress { get; set; }
+		public bool InitialBlockDownload { get; set; }
+		public uint256 ChainWork { get; set; }
+		public ulong SizeOnDisk { get; set; }
+		public bool Pruned { get; set; }
+
+		public List<SoftFork> SoftForks { get; set; } 
+		public List<Bip9SoftFork> Bip9SoftForks { get; set; }
+	}
+
+	public class BumpResponse
+	{
+		public uint256 TransactionId { get; set; }
+		public ulong OriginalFee { get; set; }
+		public ulong Fee { get; set; }
+		public List<string> Errors { get; set; }
+	}
 
 	public class NoEstimationException : Exception
 	{
